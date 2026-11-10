@@ -121,12 +121,39 @@ local or cloud, can continue without the old conversation.
 2. After the next drives on the fixed build: `analysis/gate.py` on a fresh export should show `fat` = 1 all
    route and the `ff_fit` intercept near +0.21 on every route; `ltp_valid` and `ltp_dt` (3.2-4.8 Hz is what
    controlsd accepts) cover the remaining gate.
-3. A town-loop drive for the low-speed shape; then `lat_compare.py` on it.
+3. A town-loop drive for the low-speed shape; then `lat_compare.py` on it. (Still open: the 2-9 Nov drives
+   have under a minute of hands-off steering per state below 9 m/s.)
 4. Auto hold at engaged stops: the export's `hold` column and the stop events' `auto_hold`/`hazards` fields
    are waiting for the first engaged stops on the new build.
 5. Still unidentified: the three sensor-like bytes of 0x09e; the climate bits; `DOORS_LOCKED` is tentative.
 6. Earlier open items: the panda GEN1 TI torque-check gap in `opendbc/safety/modes/mazda.h`; the owner
    confirmed the long press on the mode switch works.
+
+## Export of 2-9 Nov (routes 82-99, `~/tune_export_smart_20261109.tar`; build 5547cf2 / 8338e42, same lateral code)
+
+- **Live tune: fixed for good.** `gate.py`: Force Auto Tune reached controlsd (`fat` = 1) and the ff_fit
+  intercept is +0.17..+0.28 ("applied") on all 15 routes with enough highway. Highway mean integrator fell from
+  +0.21..+0.23 (October) to about +0.06, and steering-limit alerts from 24.6/h (October) to about 3/h.
+- **Smarter Steer Limit Flag** (`MazdaSteerLimitClassifier`): off on 2 Nov (routes 82-85, 16 min lateral), on
+  from 3 Nov (94 min). `analysis/flag_compare.py`: integrator frozen 5.7% -> 3.8% of movable frames, as designed;
+  |error| 20-27 m/s 0.060 -> 0.052, 15-20 m/s 0.075 -> 0.061, 27-40 m/s 0.050 -> 0.053; speed-mix-weighted
+  0.057 -> 0.055. Saturation alerts 3.3/h -> 2.5/h (5 alerts in all, too few to rank). A small gain, no harm
+  seen; the off sample is one day. Left on. Below 9 m/s too thin to judge (under a minute per state).
+- **TI violation codes, decoded** from the original TI's documentation (MoreTorque "TI General Documentation",
+  Google Doc 17faej3N3h-GKf32WHjsLmEe10jIoHXrlPkugUnHBZcA, Part 2): the VIOL byte is the green-LED code as two
+  hex digits. Class 2 recovers by itself 30 s after the condition clears, then RUN 2 s later (the ~31 s outage).
+  Table in `opendbc/car/mazda/torque_interceptor.py` (`VIOLATIONS`, `violation_name()`); the export and
+  `ti_fault_dump.py` now print the names.
+  - 0x11 `LKAS_STUK`: "LKAS request input does not change when not 0 or +/-600", i.e. any held nonzero value,
+    not only the ceiling. Route 97 tripped it at 0.5 mph with -1 count held 2.0 s. `TiCeilingGuard` now also
+    lowers any nonzero command held unchanged for 1.2 s by 20 counts toward zero (to zero when smaller) for
+    0.2 s. Across 22 drives only the ceiling (guard already) and |cmd| <= 2 at a creep were held >= 0.5 s.
+  - 0x31 `HIN_ERR`: EPS hall input out of window; route 8e at standstill at the end of the drive (power-down).
+  - 0x33 `TK_WLOAD`: the TI's measured output out of window under load, a check of its own analog output stage.
+    Route 99 (9 Nov 20:03): 10 times in 13 minutes at small commands (-190..+139 counts), 8-60 mph, no driver
+    torque, clean 50 Hz timing; each time the 30 s recovery, RUN, and again within 0.1-10 s; then it stopped.
+    The drive before had none. Not something openpilot sends: wiring/connector or the unit itself. Owner to
+    reseat the TI connectors; if it comes back, MoreTorque support (Discord) with route 99's dump.
 
 ## Upstream survey: StarPilotHQ/StarPilot branch `Dom` (looked at 2026-10-30)
 
@@ -218,3 +245,10 @@ finished: pushed 190f74d0 and d04f6aa4 over ssh (the https remote has no credent
 signalled the updater (it checks only once per boot; SIGHUP is what the Download button sends), the device
 rebooted onto d04f6aa4 and its broadcast now reads Force Auto Tune on. This note's wording was corrected in a
 later docs-only commit.
+
+**Sun 9 Nov, the flag.** Owner drove with the Smarter Steer Limit Flag off, then on, and asked to pull logs and
+adjust. Exported routes 82-99 on the device; the live-tune fix holds on every drive. The flag helps a little
+and is left on. Found the TI's own violation table: route 97's stuck fault came from a -1 count held at a creep,
+so the guard now covers any held command; route 99's ten 0x33 faults are the TI's output stage (hardware check
+for the owner). `analysis/flag_compare.py` added; tools name the codes. Pushed.
+

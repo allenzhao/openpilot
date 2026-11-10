@@ -47,7 +47,7 @@ class CarController(CarControllerBase):
     self.ti_ceiling_guard = None
     if CP.flags & MazdaSafetyFlags.TORQUE_INTERCEPTOR and CP.flags & MazdaSafetyFlags.GEN1:
       self.ti_ceiling_guard = TiCeilingGuard(self.ccp.TI_CEILING_DIP, self.ccp.TI_CEILING_HOLD_FRAMES,
-                                             self.ccp.TI_CEILING_DIP_FRAMES)
+                                             self.ccp.TI_CEILING_DIP_FRAMES, self.ccp.TI_CEILING - self.ccp.TI_CEILING_DIP)
     self.hold_timer_frame = 0
     self.hold_delay_frame = 0
     self.resume_timer_frame = 0

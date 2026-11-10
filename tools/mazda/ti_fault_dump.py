@@ -25,6 +25,7 @@ from collections import deque
 from openpilot.tools.lib.logreader import _LogFileReader
 from opendbc.can.dbc import DBC
 from opendbc.can.parser import get_raw_value
+from opendbc.car.mazda.torque_interceptor import VIOLATIONS, violation_name
 
 try:
   from openpilot.system.hardware.hw import Paths
@@ -281,7 +282,9 @@ def main():
       h = f["hist"]
       back, path = recovery(f, transitions)
       head = f"\n#{n}  t={f['t']:.2f}s  {f['v'] * MPH:.0f} mph  TI {STATES.get(f['from'], f['from'])} -> {STATES.get(f['to'], f['to'])}"
-      codes = f"  VIOL 0x{f['viol']:02x}  ERROR 0x{f['err']:02x}"
+      codes = f"  VIOL {violation_name(f['viol']) or '0x00'}  ERROR 0x{f['err']:02x}"
+      if f['viol'] in VIOLATIONS:
+        codes += f"  ({VIOLATIONS[f['viol']][2]})"
       back_txt = f"{back:.1f} s" if back is not None else "(not before the route ended)"
       print(head + codes + "  back to RUN with no codes after " + back_txt + ("  via " + " > ".join(path) if path else ""))
       if not h:

@@ -63,6 +63,7 @@ import time
 from openpilot.tools.lib.logreader import _LogFileReader
 from opendbc.can.dbc import DBC
 from opendbc.can.parser import get_raw_value
+from opendbc.car.mazda.torque_interceptor import violation_name
 
 try:
   from openpilot.system.hardware.hw import Paths
@@ -341,7 +342,8 @@ class Export:
             # 0x12 for one frame before it clears, and that is not a fault
             self.counts["ti_faults"] += 1
           r["ti_drv"], r["ti_st"], r["ti_vi"] = d[0] - 127, d[3], d[4]
-          self.edge("ti", (d[3], d[4], d[5]), "ti", lambda v: f"TI state {v[0]} VIOL 0x{v[1]:02x} ERROR 0x{v[2]:02x}")
+          self.edge("ti", (d[3], d[4], d[5]), "ti",
+                    lambda v: f"TI state {v[0]} VIOL 0x{v[1]:02x}{' ' + violation_name(v[1]) if v[1] else ''} ERROR 0x{v[2]:02x}")
         elif src == STOCK and a == STEER_TORQUE:
           r["eps_sen"], r["eps_mot"] = sig(a, d, "STEER_TORQUE_SENSOR"), sig(a, d, "STEER_TORQUE_MOTOR")
         elif src == STOCK and a == STEER_RATE:

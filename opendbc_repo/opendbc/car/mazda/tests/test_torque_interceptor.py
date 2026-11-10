@@ -11,7 +11,7 @@ TI_TRIP_FRAMES = 184   # the shortest unbroken 800 that faulted the TI (1.84 s)
 
 
 def guard():
-  return TiCeilingGuard(CCP.TI_CEILING_DIP, CCP.TI_CEILING_HOLD_FRAMES, CCP.TI_CEILING_DIP_FRAMES)
+  return TiCeilingGuard(CCP.TI_CEILING_DIP, CCP.TI_CEILING_HOLD_FRAMES, CCP.TI_CEILING_DIP_FRAMES, CCP.TI_CEILING - CCP.TI_CEILING_DIP)
 
 
 def drive(requests, driver_torque=0.0):
@@ -69,11 +69,35 @@ def test_dips_respect_the_rate_limits():
       assert abs(step) <= CCP.STEER_DELTA_DOWN, (prev, step)
 
 
-def test_requests_below_the_ceiling_are_untouched():
-  for level in (0.0, 0.3, 0.8, 0.85, -0.85):   # 0.85 is the dip level itself: at it, not above it
-    sent = drive([level] * 1000)
-    assert sent[-1] == int(round(level * CCP.STEER_MAX))
-    assert len(set(sent[150:])) == 1
+def test_a_held_request_below_the_ceiling_is_lowered_before_the_ti_calls_it_stuck():
+  # the TI's VIOL_LKAS_STUK: any nonzero request that does not change; 0.85 is the dip level itself
+  for level in (0.3, 0.8, 0.85, -0.85, -0.3):
+    want = int(round(level * CCP.STEER_MAX))
+    sent = drive([level] * 1500)
+    assert longest_run(sent[1:], lambda x, w=want: x == w) < TI_TRIP_FRAMES
+    assert all(abs(x) <= abs(want) and level * x >= 0 for x in sent)           # only ever lowered, never flipped
+    held = sent[200:]
+    assert sum(abs(x) for x in held) / len(held) > 0.98 * abs(want)          # and only for a moment
+  assert set(drive([0.0] * 1000)) == {0}                                       # zero is never touched
+
+
+def test_a_tiny_request_held_at_a_creep_goes_to_zero_for_a_moment():
+  # route 00000097: -1 count held for 2.0 s at 0.5 mph tripped VIOL 0x11
+  g, sent = guard(), []
+  for _ in range(600):
+    cap = g.update(-1)
+    sent.append(-1 if cap is None else max(-cap, min(cap, -1)))
+  assert 0 in sent
+  assert longest_run(sent, lambda x: x == -1) < TI_TRIP_FRAMES
+  assert longest_run(sent, lambda x: x == -1) <= CCP.TI_CEILING_HOLD_FRAMES + 1
+  assert set(sent) == {-1, 0}
+
+
+def test_a_changing_request_is_untouched():
+  g = guard()
+  for i in range(2000):
+    torque = 200 + (i % 7)          # a curve's command that moves every frame
+    assert g.update(torque) is None
 
 
 def test_a_turn_that_lets_go_of_the_ceiling_starts_the_count_again():
@@ -96,3 +120,16 @@ def test_ti_not_steering_resets_the_count():
   assert g.update(0) is None          # TI out of RUN or lateral off: nothing sent to it
   for _ in range(CCP.TI_CEILING_HOLD_FRAMES - 1):
     assert g.update(CCP.TI_CEILING) is None
+
+
+def test_violation_names_follow_the_ti_led_codes():
+  from opendbc.car.mazda.torque_interceptor import VIOLATIONS, violation_name
+  # the codes seen on the CX-9: 0x11 at the held ceiling, 0x31 at power-down, 0x33 from the output stage
+  assert violation_name(0x11) == "0x11 LKAS_STUK (class 2)"
+  assert violation_name(0x31) == "0x31 HIN_ERR (class 2)"
+  assert violation_name(0x33) == "0x33 TK_WLOAD (class 2)"
+  assert violation_name(0) == ""
+  assert violation_name(0x5A) == "0x5a (unknown)"
+  # every code is two decimal digits read as hex, as the TI's green-LED codes are
+  assert all(code >> 4 in range(1, 10) and code & 0xF in range(10) for code in VIOLATIONS)
+  assert {c for _, c, _ in VIOLATIONS.values()} == {1, 2, 3}

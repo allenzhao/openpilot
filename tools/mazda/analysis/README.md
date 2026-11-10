@@ -14,6 +14,7 @@ symlinks to compare across them.
 | `prs_effect.py` | what a driver-pressed flag does to the command below 20 m/s, and the pressed episodes |
 | `offset.py` | torqued's live lateral offset against the integrator bias, per minute (needs the `laoff` column) |
 | `gate.py` | per route, the gate inputs for the live torque tune (Force Auto Tune toggles, liveTorqueParameters validity and torqued's inputs), when the message first went valid, and the ff_fit intercept with a verdict |
+| `flag_compare.py` | Smarter Steer Limit Flag (`MazdaSteerLimitClassifier`) on vs off by speed bin: error, integrator frozen share, raw mismatch share, saturation, ceiling, hands-on share, and steering alerts per hour; the flag's state per row comes from the export's toggle broadcast |
 | `ff_fit.py` | fits the logged feedforward to setpoint and roll: an intercept near the learned offset means the live tune reached the controller, near zero means it did not |
 | `census_diff.py` | which bytes gained values between two `can_census.py` reports |
 | `watch_parse.py` | reads a `can_census.py --watch` timeline for a window: context changes and rare byte changes per address |
