@@ -36,6 +36,7 @@ class TestSunnylinkdMethods(OpenpilotTestCase):
       "GithubSshKeys": "ssh-rsa attacker_key",
       "OnroadCycleRequested": "1",
       "AlphaLongitudinalEnabled": "1",
+      "TorqueInterceptorEnabled": "1",
     }
 
     sunnylinkd.saveParams(blocked_params)

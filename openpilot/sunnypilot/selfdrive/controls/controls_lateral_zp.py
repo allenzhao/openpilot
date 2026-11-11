@@ -9,6 +9,7 @@ import numpy as np
 import openpilot.cereal.messaging as messaging
 
 from opendbc.car import structs
+from opendbc.car.mazda.values import MazdaFlags
 from opendbc.sunnypilot.car.lateral_tune import get_steer_slew_schedule
 from openpilot.common.realtime import DT_CTRL
 from openpilot.common.swaglog import cloudlog
@@ -23,6 +24,22 @@ from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import resolved_tun
 # a model change: a one-frame drop (a steer fault flicker) would otherwise swap and resume
 # steering on a controller no inactive frame had primed
 TUNE_SWAP_INACTIVE_FRAMES = round(0.5 / DT_CTRL)
+
+# The torque tunes' proportional ladder climbs steeply under 10 m/s (kp 250 at 1 m/s, 30 at 3,
+# 5.5 at 7.5). A Mazda EPS never delivered there: nothing under 45 kph on the legacy firmware,
+# next to nothing under 4 m/s on the 2022 one. A Torque Interceptor does, from 1 m/s, and on the
+# one such car measured (a CX-8 on legacy firmware, pdscomp's port) that gain pinned the command
+# rail to rail under 30 kph. 4.0 is the knee of that car's replay sweep. From 10 m/s up the
+# ladder is as it was; below, it is a starting point for a car nobody here has driven.
+TORQUE_INTERCEPTOR_LOW_SPEED_KP_CAP = 4.0
+
+
+def cap_low_speed_kp(lac, cap: float) -> None:
+  """Hold a torque controller's proportional ladder to cap. A new table: the tunes share theirs."""
+  pid = getattr(lac, 'pid', None)
+  if pid is not None:
+    speeds, gains = pid._k_p
+    pid._k_p = [list(speeds), [min(float(k), cap) for k in gains]]
 
 
 class ControlsLateralZP:
@@ -57,6 +74,9 @@ class ControlsLateralZP:
       return lac
 
     built = {version: build(version) for version in dict.fromkeys(versions.values())}
+    if self.CP.brand == 'mazda' and self.CP.flags & MazdaFlags.TORQUE_INTERCEPTOR and self.CP.lateralTuning.which() == 'torque':
+      for controller in built.values():
+        cap_low_speed_kp(controller, TORQUE_INTERCEPTOR_LOW_SPEED_KP_CAP)
     self._lac_by_size = {big: built[version] for big, version in versions.items()}
     self._lacs = tuple(built.values())
     return self._lac_by_size[False]

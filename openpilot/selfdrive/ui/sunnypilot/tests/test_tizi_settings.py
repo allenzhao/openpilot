@@ -232,3 +232,50 @@ def test_confidence_ball_is_a_visuals_toggle(params):
 
   assert "ConfidenceBall" in VisualsLayout()._toggle_defs
   assert params.get_bool("ConfidenceBall") is False  # off by default
+
+
+def test_mazda_torque_interceptor_toggle_is_set_between_drives(params):
+  """Vehicle panel, Mazda: card reads the param when a drive starts, so the toggle is locked onroad
+  and says why."""
+  from unittest import mock
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.vehicle.brands.factory import BrandSettingsFactory
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.vehicle.brands.mazda import MazdaSettings
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  settings = BrandSettingsFactory.create_brand_settings("mazda")
+  assert isinstance(settings, MazdaSettings)
+  toggle = settings.torque_interceptor_toggle
+  assert settings.items == [toggle]
+  assert toggle.action_item.toggle.param_key == "TorqueInterceptorEnabled"
+  assert not toggle.action_item.get_state()
+
+  with mock.patch.object(ui_state, "is_offroad", return_value=True):
+    settings.update_settings()
+    assert toggle.action_item.enabled
+    assert toggle.description and "<b>" not in toggle.description
+  with mock.patch.object(ui_state, "is_offroad", return_value=False):
+    settings.update_settings()
+    assert not toggle.action_item.enabled
+    assert toggle.description.startswith("<b>")
+
+  # it shows what is stored
+  params.put_bool("TorqueInterceptorEnabled", True, block=True)
+  assert MazdaSettings().torque_interceptor_toggle.action_item.get_state()
+  params.remove("TorqueInterceptorEnabled")
+
+
+def test_mazda_torque_interceptor_toggle_shows_once_the_car_is_known(params):
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.vehicle import VehicleLayout
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.vehicle.brands.mazda import MazdaSettings
+  from openpilot.selfdrive.ui.sunnypilot.tests.helpers import render
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  ui_state.CP = None
+  layout = VehicleLayout()
+  for brand, shown in (("toyota", False), ("mazda", True)):
+    # blocking: the default put lands on a background thread, and the next render would race it
+    params.put("CarPlatformBundle", {"brand": brand, "platform": "X", "name": "X"}, block=True)
+    render(layout)
+    assert isinstance(layout._brand_settings, MazdaSettings) == shown
+    assert any(item is getattr(layout._brand_settings, "torque_interceptor_toggle", None) for item in layout.items) == shown
+  params.remove("CarPlatformBundle")

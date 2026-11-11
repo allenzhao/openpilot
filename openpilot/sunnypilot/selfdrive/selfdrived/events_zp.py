@@ -138,6 +138,23 @@ def speed_limit_pre_active_alert(CP: car.CarParams, CS: car.CarState, sm: messag
     Priority.LOW, VisualAlert.none, AudibleAlertSP.promptSingleLow, .1)
 
 
+def torque_interceptor_not_ready_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int,
+                                       personality) -> Alert:
+  # What it last said of itself, so the driver can tell a cable from a fault. The violation
+  # number reads in hex as the code its green LED flashes (docs/zoompilot/mazda-torque-interceptor.md).
+  ti = sm['carStateSP'].zoompilot.torqueInterceptor
+  if not ti.heard:
+    line = "No signal: check its cables and OBD power"
+  elif ti.violation:
+    line = f"Fault code {ti.violation:02X}"
+  elif ti.error:
+    line = f"Error code {ti.error:02X}"
+  else:
+    line = "Starting up" if ti.state < 3 else "Not taking requests"
+  # mici clips a title past 16 characters
+  return NormalPermanentAlert("TI Not Ready" if IS_MICI else "Torque Interceptor Not Ready", line, priority=Priority.LOW)
+
+
 # zoompilot's text for sunnypilot's events
 EVENTS_SP_ZP: dict[int, dict[str, Alert | AlertCallbackType]] = {
   # the speed limit alerts name the speed the car settles at
@@ -244,6 +261,16 @@ EVENTS_ZP: dict[int, dict[str, Alert | AlertCallbackType]] = {
   # Set Speed Assist switched, from the distance button or the UI (selfdrived_zp)
   EventNameZP.speedAssistSwitched: {
     ET.WARNING: speed_assist_switched_alert,
+  },
+
+  # Mazda's Torque Interceptor unfit, or silent, for seconds (carstate's ti_not_ready). Named
+  # whether or not anything is engaged, and MADS takes no lateral entry on it. It never
+  # disables: a ZP soft disable would drop MADS lateral in one frame with no alert while cruise
+  # is engaged, and carstate's steerFaultTemporary already takes lateral through upstream's
+  # path. LOW, so upstream's take-control alert for that fault keeps the screen while it runs.
+  EventNameZP.torqueInterceptorNotReady: {
+    ET.PERMANENT: torque_interceptor_not_ready_alert,
+    ET.NO_ENTRY: NoEntryAlert("Torque Interceptor Not Ready"),
   },
 
   # an accelerator ready while something is in control: it swaps in only when

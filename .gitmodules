@@ -1,11 +1,12 @@
 # Use the zoompilot opendbc fork. Changes to this file make submodule sync refresh
 # legacy URLs.
+# panda and opendbc: the forks that carry the Torque Interceptor commits this branch pins.
 [submodule "panda"]
   path = panda
-  url = https://github.com/sunnyhaibin/panda.git
+  url = https://github.com/allenzhao/panda.git
 [submodule "opendbc"]
   path = opendbc_repo
-  url = https://github.com/zoompilot/opendbc.git
+  url = https://github.com/allenzhao/opendbc.git
 [submodule "jetlink"]
   path = jetlink_repo
   url = https://github.com/zoompilot/jetlink.git

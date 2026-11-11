@@ -59,6 +59,7 @@ BLOCKED_PARAMS = {
   "AlphaLongitudinalEnabled",  # Flips longitudinal mode via an onroad cycle; local UI only
   "OffroadMode",               # Applied by hardwared alone; remote writes go through OffroadModeRequested
   "ParamsVersion",         # Device-managed version counter
+  "TorqueInterceptorEnabled",  # Declares steering hardware and changes the panda's safety param; local UI only
 }
 
 

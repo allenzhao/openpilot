@@ -10,6 +10,21 @@ from openpilot.common.params import Params
 from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import StockEcuHandBackServer
 
 
+def fill_torque_interceptor(msg, car_state) -> None:
+  """CarStateZP.torqueInterceptor from a carstate that tracks one (Mazda's, when the driver
+  declared it): what the interceptor last said of itself, for the alert that names it and for
+  whoever reads the log. Left at zero on every other car."""
+  if not getattr(car_state, "ti_enabled", False):
+    return
+  msg.notReady = bool(car_state.ti_not_ready)
+  msg.heard = bool(car_state.ti_fresh)
+  msg.ready = bool(car_state.ti_ready)
+  msg.state = int(car_state.ti_state) & 0xFF
+  msg.violation = int(car_state.ti_violation) & 0xFF
+  msg.error = int(car_state.ti_error) & 0xFF
+  msg.version = int(car_state.ti_version) & 0xFF
+
+
 class CardExt:
   """sunnypilot's per-frame hooks into card, one object so card.py carries one-line call sites.
 
@@ -43,6 +58,8 @@ class CardExt:
     CS_SP.zoompilot.distanceFarther = bool(getattr(self.car_state, "distance_more_button", 0))
     # the EPS re-arming after the car's lane keep came back on, on the brands that track it
     CS_SP.zoompilot.lkasArming = bool(getattr(self.car_state, "lkas_arming", False))
+    # a Torque Interceptor's own account of itself, on a car declared to have one
+    fill_torque_interceptor(CS_SP.zoompilot.torqueInterceptor, self.car_state)
 
   @property
   def stock_ecu_state(self) -> StockEcuState:

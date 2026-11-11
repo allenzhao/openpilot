@@ -607,6 +607,7 @@ struct OnroadEventZP @0xeff60a9f4d5cb12f {
     stockLkasArming @10;
     stockCruiseFailed @11;
     speedAssistSwitched @12;
+    torqueInterceptorNotReady @13;
   }
 }
 
@@ -626,6 +627,25 @@ struct CarStateZP @0xc879af11c43cb400 {
   # other process reads it here instead of CarParamsSP.pcmCruiseSpeed. unset is a log from
   # before the field: readers fall back to that boot flag.
   icbmActivation @4 :IcbmActivation;
+  # Mazda's Torque Interceptor as its feedback frame last showed it, on a car declared to have
+  # one (docs/zoompilot/mazda-torque-interceptor.md). All zero on any other car.
+  torqueInterceptor @5 :TorqueInterceptor;
+
+  struct TorqueInterceptor {
+    # unfit, or silent under a running command stream, long enough to tell the driver by name
+    notReady @0 :Bool;
+    # a feedback frame within the last 60 ms; the fields below are that frame's
+    heard @1 :Bool;
+    # fit to take torque: heard, well formed, in run, no violation, error or ramp-down
+    ready @2 :Bool;
+    # 0 discover (waiting for the keyed command stream), 1 off (start-up or recovery delay, or
+    # a latched violation), 2 driver override, 3 run. Only run applies its bias.
+    state @3 :UInt8;
+    # its violation number, which reads in hex as the green LED's code: 0x11, 0x12, ...
+    violation @4 :UInt8;
+    error @5 :UInt8;       # logic error code, diagnostic only
+    version @6 :UInt8;     # firmware
+  }
 
   enum IcbmActivation {
     unset @0;

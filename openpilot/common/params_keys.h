@@ -320,6 +320,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"StockEcuHandBackResult", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, JSON}},
     {"StockEcuHandBackFailed", {CLEAR_ON_IGNITION_ON, BOOL}},  // an onroad cycle went ahead on a failed hand-back: stock cruise is down until ignition
     {"TorqueControlTuneBig", {PERSISTENT | BACKUP, FLOAT, "1.0"}},  // big-model tune
+    // Mazda: a Torque Interceptor is fitted (docs/zoompilot/mazda-torque-interceptor.md). It sets the
+    // panda's safety param, so it is set at the device only: no backup, no remote write.
+    {"TorqueInterceptorEnabled", {PERSISTENT, BOOL, "0"}},
 
     // Accelerators: what runs the large model. See sunnypilot/jetlink_adapter/.
     {"AcceleratorProgress", {CLEAR_ON_MANAGER_START, JSON}},

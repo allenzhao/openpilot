@@ -8,6 +8,7 @@ from typing import Any
 
 from opendbc.car import structs
 from opendbc.car.interfaces import CarInterfaceBase
+from opendbc.car.mazda.values import MazdaFlags
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.car.mazda_torque_seed import seed_mazda_torque_defaults
@@ -86,7 +87,34 @@ def _cleanup_unsupported_params(CP: structs.CarParams, CP_SP: structs.CarParamsS
   set_speed_limit_assist_availability(CP, CP_SP, params)
 
 
+def _reset_torque_caches_on_actuator_change(CP: structs.CarParams, params: Params | None = None) -> None:
+  """A Mazda's Torque Interceptor switched on or off since the last drive: the learned torque
+  parameters describe the other actuator, and torqued's restore key (fingerprint and offline
+  tune) cannot tell. card calls this before it writes CarParams, which torqued waits on, so
+  the caches are gone before anything reads them."""
+  if params is None:
+    params = Params()
+
+  if CP.brand != "mazda":
+    return
+  prev_bytes = params.get("CarParamsPersistent")
+  if prev_bytes is None:
+    return
+  try:
+    with structs.car.CarParams.from_bytes(prev_bytes) as prev:
+      changed = prev.brand == "mazda" and bool((prev.flags ^ CP.flags) & MazdaFlags.TORQUE_INTERCEPTOR)
+  except Exception:
+    cloudlog.exception("could not parse CarParamsPersistent")
+    return
+  if changed:
+    params.remove("LiveTorqueParameters")
+    params.remove("LiveTorqueParametersSP")
+    cloudlog.warning("Torque Interceptor %s since the last drive: learned torque parameters cleared",
+                     "on" if CP.flags & MazdaFlags.TORQUE_INTERCEPTOR else "off")
+
+
 def setup_interfaces(CI: CarInterfaceBase, params: Params | None = None) -> None:
+  _reset_torque_caches_on_actuator_change(CI.CP, params)
   seed_mazda_torque_defaults(CI.CP, params)
   enforce_torque = _enforce_torque_lateral_control(CI.CP, params)
   nnlc_enabled = _initialize_neural_network_lateral_control(CI.CP, CI.CP_SP, params)
@@ -112,6 +140,7 @@ def initialize_params(params) -> list[dict[str, Any]]:
   # mazda
   keys.extend([
     "MazdaTjaButton",
+    "TorqueInterceptorEnabled",
   ])
 
   # subaru
