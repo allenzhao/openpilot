@@ -32,6 +32,7 @@ from openpilot.sunnypilot.selfdrive.selfdrived.events_zp import EVENTS_ZP, torqu
 
 EventName = log.OnroadEvent.EventName
 EventNameZP = custom.OnroadEventZP.EventName
+AudibleAlert = car.CarControl.HUDControl.AudibleAlert
 
 LEGACY = MazdaFlags.GEN1 | MazdaFlags.LEGACY_FW_EPS
 STEER_TO_ZERO = MazdaFlags.GEN1 | MazdaFlags.STEER_TO_ZERO_EPS
@@ -75,15 +76,18 @@ class TestCardPublishes:
     msg = messaging.new_message('carStateSP').carStateSP
     car_state = SimpleNamespace(ti_enabled=True, ti_not_ready=True, ti_fresh=True, ti_ready=False,
                                 ti_state=int(TorqueInterceptorState.OFF), ti_violation=0x11, ti_error=0, ti_version=0x10)
-    fill_torque_interceptor(msg.zoompilot.torqueInterceptor, car_state)
+    fill_torque_interceptor(msg, car_state)
     ti = msg.zoompilot.torqueInterceptor
     assert (ti.notReady, ti.heard, ti.ready, ti.state, ti.violation, ti.error, ti.version) == (True, True, False, 1, 0x11, 0, 0x10)
 
   def test_nothing_on_a_car_without_one(self):
-    msg = messaging.new_message('carStateSP').carStateSP
+    # not even the empty struct: carStateSP is logged for every car
+    untouched = len(messaging.new_message('carStateSP').to_bytes())
     for car_state in (SimpleNamespace(), SimpleNamespace(ti_enabled=False, ti_not_ready=True)):
-      fill_torque_interceptor(msg.zoompilot.torqueInterceptor, car_state)
-    assert not msg.zoompilot.torqueInterceptor.notReady
+      event = messaging.new_message('carStateSP')
+      fill_torque_interceptor(event.carStateSP, car_state)
+      assert len(event.to_bytes()) == untouched
+      assert not event.as_reader().carStateSP.zoompilot.torqueInterceptor.notReady
 
   @pytest.mark.parametrize("enabled", [False, True])
   def test_the_real_carstate_carries_every_field_it_reads(self, enabled):
@@ -92,7 +96,7 @@ class TestCardPublishes:
     CS = CarInterface(CP, CP_SP).CS
     assert CS.ti_enabled == enabled
     msg = messaging.new_message('carStateSP').carStateSP
-    fill_torque_interceptor(msg.zoompilot.torqueInterceptor, CS)
+    fill_torque_interceptor(msg, CS)
     ti = msg.zoompilot.torqueInterceptor
     assert (ti.notReady, ti.heard, ti.ready, ti.state) == (False, False, False, int(TorqueInterceptorState.DISCOVER))
 
@@ -181,6 +185,8 @@ class TestAlert:
     alert = torque_interceptor_not_ready_alert(None, None, sm, False, 0, None)  # ty: ignore[invalid-argument-type]
     assert alert.alert_text_1 == "Torque Interceptor Not Ready"
     assert alert.alert_text_2 == line
+    # heard once when it comes up: the steer fault beside it is silent for a driver holding the wheel
+    assert alert.audible_alert == AudibleAlert.prompt
 
   def test_selfdrived_builds_it_through_the_event(self):
     events_sp = EventsSP()

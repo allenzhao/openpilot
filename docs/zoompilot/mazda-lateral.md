@@ -609,7 +609,8 @@ the allowlist tests in `test_mazda_mads_white_wheel.py`, plus the interface raw-
 
 Every alert with the `steerRequired` icon (saturation, driver monitoring, the quiet EPS-standby
 banner, the disable alerts) also goes to the car's own dash as the hands-on-wheel code in
-0x440, at the 2 Hz alert cadence and only above the LKAS speed floor. Which bits draw the text
+0x440, at the 2 Hz alert cadence and only above the LKAS speed floor (at any speed with a
+Torque Interceptor, which steers below it: mazda-torque-interceptor.md). Which bits draw the text
 was mapped by cycling four codes under cruise at 28-47 mph, 6 s on and 6 s off, and matching
 the driver's clock against the frames in the rlog:
 

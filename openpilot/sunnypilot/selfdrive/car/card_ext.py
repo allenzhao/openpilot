@@ -10,12 +10,14 @@ from openpilot.common.params import Params
 from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import StockEcuHandBackServer
 
 
-def fill_torque_interceptor(msg, car_state) -> None:
+def fill_torque_interceptor(CS_SP, car_state) -> None:
   """CarStateZP.torqueInterceptor from a carstate that tracks one (Mazda's, when the driver
   declared it): what the interceptor last said of itself, for the alert that names it and for
-  whoever reads the log. Left at zero on every other car."""
+  whoever reads the log. On every other car the struct is not touched: reading it off the
+  builder would allocate it into each message."""
   if not getattr(car_state, "ti_enabled", False):
     return
+  msg = CS_SP.zoompilot.torqueInterceptor
   msg.notReady = bool(car_state.ti_not_ready)
   msg.heard = bool(car_state.ti_fresh)
   msg.ready = bool(car_state.ti_ready)
@@ -59,7 +61,7 @@ class CardExt:
     # the EPS re-arming after the car's lane keep came back on, on the brands that track it
     CS_SP.zoompilot.lkasArming = bool(getattr(self.car_state, "lkas_arming", False))
     # a Torque Interceptor's own account of itself, on a car declared to have one
-    fill_torque_interceptor(CS_SP.zoompilot.torqueInterceptor, self.car_state)
+    fill_torque_interceptor(CS_SP, self.car_state)
 
   @property
   def stock_ecu_state(self) -> StockEcuState:

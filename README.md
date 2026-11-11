@@ -55,7 +55,7 @@ The CX-5 keeps its factory cruise; zoompilot can set the speed for you by 'press
 
 Not just the CX-5.
 
-- **Torque Interceptor (this fork, untested on a car).** A MoreTorque Torque Interceptor between the torque sensor and an older EPS steers below that EPS's 45 kph floor. Turn it on in Settings, Vehicle. The `zoompilot-ti` branch builds on the device; see [docs/zoompilot/mazda-torque-interceptor.md](docs/zoompilot/mazda-torque-interceptor.md) for installing it, what it does and what nobody has verified yet.
+- **Torque Interceptor (this fork, untested on a car).** A MoreTorque Torque Interceptor between the torque sensor and an older EPS steers below that EPS's 45 kph floor. Turn it on in Settings, Vehicle. The `zoompilot-ti` branch is source, built by the device at first boot; see [docs/zoompilot/mazda-torque-interceptor.md](docs/zoompilot/mazda-torque-interceptor.md) for installing it, what it does and what nobody has verified yet.
 - **EPS swaps.** Swapped a 2022+ CX-5 steering rack into an older Mazda? We fingerprint the rack by its firmware, not by the car openpilot thinks you're driving, and steer it all the way to a stop.
 - **CX-9.** Supported for all features, but speed-dependent torque will take longer to learn since I only supply seeds for the CX-5. The CX-9 specs are also updated to match Mazda's official figures.
 

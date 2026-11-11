@@ -151,8 +151,12 @@ def torque_interceptor_not_ready_alert(CP: car.CarParams, CS: car.CarState, sm: 
     line = f"Error code {ti.error:02X}"
   else:
     line = "Starting up" if ti.state < 3 else "Not taking requests"
-  # mici clips a title past 16 characters
-  return NormalPermanentAlert("TI Not Ready" if IS_MICI else "Torque Interceptor Not Ready", line, priority=Priority.LOW)
+  # One chime when it comes up: upstream's take-control alert for the steer fault beside it is
+  # softened to a banner, or dropped, for a driver with a hand on the wheel, and the interceptor
+  # reads a resting hand as one. mici clips a title past 16 characters.
+  return Alert("TI Not Ready" if IS_MICI else "Torque Interceptor Not Ready", line,
+               AlertStatus.normal, AlertSize.mid,
+               Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .2)
 
 
 # zoompilot's text for sunnypilot's events
