@@ -67,13 +67,18 @@ class CarSpecificEventsSP:
 
     elif self.CP.brand == 'mazda':
       torque_interceptor = bool(self.CP.flags & MazdaFlags.TORQUE_INTERCEPTOR)
-      if self.CP.flags & MazdaFlags.STEER_TO_ZERO_EPS and not torque_interceptor and events.has(EventName.steerTempUnavailable):
+      # With a Torque Interceptor the fault is the interceptor gone while the car moves, or on
+      # steer-to-zero firmware the EPS's non-delivery alert below beside a fit interceptor
+      # (torqueInterceptor.epsUndelivered).
+      eps_alone = not torque_interceptor or CS_SP.zoompilot.torqueInterceptor.epsUndelivered
+      if self.CP.flags & MazdaFlags.STEER_TO_ZERO_EPS and eps_alone and events.has(EventName.steerTempUnavailable):
         # steerFaultTemporary on this EPS is the non-delivery latch reporting a sustained
         # road-speed block. The latch has already zeroed the command, so there is nothing
         # for a soft disable to protect; it only costs MADS its lateral after 3 s and
-        # shouts at the driver. Keep the banner, drop the escalation.
-        # With a Torque Interceptor the fault is the interceptor gone while the car moves:
-        # nothing is steering, and the escalation stands.
+        # shouts at the driver. Keep the banner, drop the escalation, the interceptor steering
+        # on if there is one. A fault of the interceptor's own keeps the escalation: on legacy
+        # firmware nothing else steers below the floor, and on steer-to-zero firmware the EPS
+        # could, but lateral is dropped all the same so the driver is told.
         events.remove(EventName.steerTempUnavailable)
         events.add(EventName.steerTempUnavailableSilent)
       if torque_interceptor and CS_SP.zoompilot.torqueInterceptor.notReady:

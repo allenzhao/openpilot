@@ -632,9 +632,10 @@ struct CarStateZP @0xc879af11c43cb400 {
   torqueInterceptor @5 :TorqueInterceptor;
 
   struct TorqueInterceptor {
-    # unfit, or silent under a running command stream, long enough to tell the driver by name
+    # unfit, or silent under a running command stream, long enough to tell the driver by name,
+    # or dropping out again and again
     notReady @0 :Bool;
-    # a feedback frame within the last 60 ms; the fields below are that frame's
+    # a feedback frame within the last 70 ms; state, violation, error and version are that frame's
     heard @1 :Bool;
     # fit to take torque: heard, well formed, in run, no violation, error or ramp-down
     ready @2 :Bool;
@@ -645,6 +646,28 @@ struct CarStateZP @0xc879af11c43cb400 {
     violation @4 :UInt8;
     error @5 :UInt8;       # logic error code, diagnostic only
     version @6 :UInt8;     # firmware
+    # Why it was last not fit, kept until it has been fit for a second and is no longer named:
+    # what the alert says, where the fields above follow the frame of the moment. causeCode is
+    # the byte that goes with it: the violation or error number, or the state it was in.
+    cause @7 :Cause;
+    causeCode @8 :UInt8;
+    # dropouts that keep coming, each a restart of its command from zero: named without a
+    # steer fault, and fit on most frames meanwhile
+    droppingOut @9 :Bool;
+    # steer-to-zero firmware: the steer fault is the EPS's non-delivery alone, its own half of
+    # the steering, with the interceptor fit. Shown as it is without the interceptor.
+    epsUndelivered @10 :Bool;
+
+    # opendbc's TorqueInterceptorCause, in its order
+    enum Cause {
+      none @0;
+      silent @1;        # no feedback
+      malformed @2;     # a frame that fails the form check
+      violation @3;
+      error @4;
+      notRunning @5;    # discover, off or driver override with nothing else wrong
+      rampDown @6;      # taking its bias to zero by itself
+    }
   }
 
   enum IcbmActivation {

@@ -11,10 +11,12 @@ import bisect
 
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal import log, custom
+from opendbc.car.mazda.values import TorqueInterceptorCause, TorqueInterceptorState
 from opendbc.car.structs import car
 from opendbc.sunnypilot.car.stock_ecu import StockEcuState
 from openpilot.common.constants import CV
 from openpilot.common.hardware import HARDWARE
+from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.selfdrived.events import get_display_speed
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, NoEntryAlert, \
   EngagementAlert, NormalPermanentAlert, AlertCallbackType
@@ -138,22 +140,44 @@ def speed_limit_pre_active_alert(CP: car.CarParams, CS: car.CarState, sm: messag
     Priority.LOW, VisualAlert.none, AudibleAlertSP.promptSingleLow, .1)
 
 
+# The named alert's chime: heard when the alert comes up, not for as long as it stands.
+TORQUE_INTERCEPTOR_CHIME_T = 1.0  # s
+
+
+def torque_interceptor_reason(cause: int, code: int) -> tuple[str, str]:
+  """Why the interceptor was not fit, as the alert's line and as the few words that follow
+  "Keeps dropping out". A violation number reads in hex as the code its green LED flashes
+  (docs/zoompilot/mazda-torque-interceptor.md)."""
+  if cause == TorqueInterceptorCause.SILENT:
+    return "No signal: check its cables and OBD power", "no signal"
+  if cause == TorqueInterceptorCause.MALFORMED:
+    return "Unreadable reply", "unreadable reply"
+  if cause == TorqueInterceptorCause.VIOLATION:
+    return f"Fault code {code:02X}", f"fault code {code:02X}"
+  if cause == TorqueInterceptorCause.ERROR:
+    return f"Error code {code:02X}", f"error code {code:02X}"
+  if cause == TorqueInterceptorCause.NOT_RUNNING:
+    if code == TorqueInterceptorState.DRIVER_OVER:
+      return "Stood aside for the driver and not back", "not back from driver override"
+    return "Starting up", "restarting"
+  if cause == TorqueInterceptorCause.RAMP_DOWN:
+    return "Ramping its torque down", "ramping its torque down"
+  return "Not taking requests", "cause unknown"
+
+
 def torque_interceptor_not_ready_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int,
                                        personality) -> Alert:
-  # What it last said of itself, so the driver can tell a cable from a fault. The violation
-  # number reads in hex as the code its green LED flashes (docs/zoompilot/mazda-torque-interceptor.md).
+  # Why it was last not fit, so the driver can tell a cable from a fault. carstate keeps the
+  # reason until the interceptor has been fit for good: the frame of the moment is a healthy
+  # one between dropouts that keep coming, and for the second after a latch clears.
   ti = sm['carStateSP'].zoompilot.torqueInterceptor
-  if not ti.heard:
-    line = "No signal: check its cables and OBD power"
-  elif ti.violation:
-    line = f"Fault code {ti.violation:02X}"
-  elif ti.error:
-    line = f"Error code {ti.error:02X}"
-  else:
-    line = "Starting up" if ti.state < 3 else "Not taking requests"
-  # One chime when it comes up: upstream's take-control alert for the steer fault beside it is
-  # softened to a banner, or dropped, for a driver with a hand on the wheel, and the interceptor
-  # reads a resting hand as one. mici clips a title past 16 characters.
+  line, short = torque_interceptor_reason(ti.cause.raw, ti.causeCode)
+  if ti.droppingOut:
+    line = f"Keeps dropping out: {short}"
+  # One chime when it comes up (EventsZP.create_alerts takes it off after that): upstream's
+  # take-control alert for the steer fault beside it is softened to a banner, or dropped, for a
+  # driver with a hand on the wheel, and the interceptor reads a resting hand as one. mici clips
+  # a title past 16 characters.
   return Alert("TI Not Ready" if IS_MICI else "Torque Interceptor Not Ready", line,
                AlertStatus.normal, AlertSize.mid,
                Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .2)
@@ -267,14 +291,17 @@ EVENTS_ZP: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.WARNING: speed_assist_switched_alert,
   },
 
-  # Mazda's Torque Interceptor unfit, or silent, for seconds (carstate's ti_not_ready). Named
-  # whether or not anything is engaged, and MADS takes no lateral entry on it. It never
-  # disables: a ZP soft disable would drop MADS lateral in one frame with no alert while cruise
-  # is engaged, and carstate's steerFaultTemporary already takes lateral through upstream's
-  # path. LOW, so upstream's take-control alert for that fault keeps the screen while it runs.
+  # Mazda's Torque Interceptor unfit, or silent, for seconds, or dropping out again and again
+  # (carstate's ti_not_ready). Named whether or not anything is engaged, and MADS takes no
+  # lateral entry on it; carstate raises carNotReady beside it, upstream's own no-entry, which
+  # is the one the selfdrive machine reads for cruise. It never disables: a ZP soft disable
+  # would drop MADS lateral in one frame with no alert while cruise is engaged, and carstate's
+  # steerFaultTemporary already takes lateral through upstream's path. LOW, so upstream's
+  # take-control alert for that fault keeps the screen while it runs; the refusal is MID, so
+  # it is the one read over "Car Not Ready".
   EventNameZP.torqueInterceptorNotReady: {
     ET.PERMANENT: torque_interceptor_not_ready_alert,
-    ET.NO_ENTRY: NoEntryAlert("Torque Interceptor Not Ready"),
+    ET.NO_ENTRY: NoEntryAlert("Torque Interceptor Not Ready", priority=Priority.MID),
   },
 
   # an accelerator ready while something is in control: it swaps in only when
@@ -307,6 +334,20 @@ class EventsZP(EventsBase):
   def __init__(self):
     super().__init__()
     self.event_counters = dict.fromkeys(EVENTS_ZP.keys(), 0)
+
+  def create_alerts(self, event_types: list[str], callback_args=None):
+    alerts = super().create_alerts(event_types, callback_args)
+    # The interceptor's alert stands for as long as it is not ready, which can be the rest of
+    # the drive. soundd starts a sound when the alert's sound changes, so one carried on every
+    # frame silences every later alert with the same sound (a lane departure) and plays again
+    # each time the screen comes back to this one. It is heard when it comes up and is silent
+    # after that; a new alert, after a frame without the event, is heard again.
+    if self.event_counters[EventNameZP.torqueInterceptorNotReady] >= round(TORQUE_INTERCEPTOR_CHIME_T / DT_CTRL):
+      standing = f"{EVENT_NAME_ZP[EventNameZP.torqueInterceptorNotReady]}/{ET.PERMANENT}"
+      for alert in alerts:
+        if alert.alert_type == standing:
+          alert.audible_alert = AudibleAlert.none
+    return alerts
 
   def get_events_mapping(self) -> dict[int, dict[str, Alert | AlertCallbackType]]:
     return EVENTS_ZP

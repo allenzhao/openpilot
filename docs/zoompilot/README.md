@@ -13,9 +13,9 @@ repo; a `tools/mazda_long/...` path in these notes is relative to that repo.
   STEER_MAX, LKAS_BLOCK and the non-delivery latch, camera ERR_BIT_1 history and the
   first-activation hold, the camera's own TJA/CTS state, the bus-2 camera press and the TJA
   button as the MADS switch
-- mazda-torque-interceptor.md: the Torque Interceptor on legacy-firmware cars: its protocol
-  and violation codes, the second command and its limits, the panda's side, what is not
-  verified, installing and the first drive
+- mazda-torque-interceptor.md: the Torque Interceptor, on legacy-firmware cars and beside a
+  steer-to-zero EPS: its protocol and violation codes, the second command and its limits, the
+  panda's side, what is not verified, installing and the first drive
 - mazda-fingerprinting.md: VIN decode table and the EPS-swap fallback
 - mads.md: the two lateral machines, engaging with the brake held in pause mode
 - lateral-tune.md: v0/v1/v2 lineage, the v2 mechanisms and their attribution, the

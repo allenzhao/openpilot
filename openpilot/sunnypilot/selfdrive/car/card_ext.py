@@ -12,9 +12,9 @@ from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import StockEcuHandBa
 
 def fill_torque_interceptor(CS_SP, car_state) -> None:
   """CarStateZP.torqueInterceptor from a carstate that tracks one (Mazda's, when the driver
-  declared it): what the interceptor last said of itself, for the alert that names it and for
-  whoever reads the log. On every other car the struct is not touched: reading it off the
-  builder would allocate it into each message."""
+  declared it): what the interceptor last said of itself for whoever reads the log, and why it
+  was last not fit for the alert that names it. On every other car the struct is not touched:
+  reading it off the builder would allocate it into each message."""
   if not getattr(car_state, "ti_enabled", False):
     return
   msg = CS_SP.zoompilot.torqueInterceptor
@@ -25,6 +25,10 @@ def fill_torque_interceptor(CS_SP, car_state) -> None:
   msg.violation = int(car_state.ti_violation) & 0xFF
   msg.error = int(car_state.ti_error) & 0xFF
   msg.version = int(car_state.ti_version) & 0xFF
+  msg.cause = int(car_state.ti_unfit_cause)
+  msg.causeCode = int(car_state.ti_unfit_code) & 0xFF
+  msg.droppingOut = bool(car_state.ti_dropping_out)
+  msg.epsUndelivered = bool(car_state.eps_undelivered)
 
 
 class CardExt:
