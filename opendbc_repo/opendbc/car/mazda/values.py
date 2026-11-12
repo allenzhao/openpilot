@@ -100,6 +100,11 @@ class MazdaSafetyFlags(IntFlag):
   # driver's mode choice on the distance-increase button (see hybrid.py). CarParams flag only -- it is never ORed
   # into safetyParam: the panda runs the RADAR_EMULATION safety mode in both sub-modes.
   HYBRID_LONG = 512
+  # The EPS runs the 2022+ "steer-to-zero" firmware (STEER_TO_ZERO_EPS_FW), read off its version at fingerprinting:
+  # it takes LKAS requests down to a stop, so there is no 45 kph floor. Factory on the 2022+ CX-5, and what an EPS
+  # swap fits to an older gen1 body. CarParams flag only -- never ORed into safetyParam: the panda treats every gen1
+  # EPS alike.
+  STEER_TO_ZERO_EPS = 1024
 
 
 @dataclass
@@ -186,6 +191,31 @@ class LKAS_LIMITS:
   TI_STEER_THRESHOLD = 6
   TI_DISABLE_SPEED = 0    # kph
   TI_ENABLE_SPEED = 0     # kph
+  # Below this a steer-to-zero EPS's block with LKAS_TRACK_STATE is its standby from a stop (STEER_RATE byte 6 0x14),
+  # where its first activation of the drive is held (carstate eps_first_engage_hold).
+  EPS_STANDBY_SPEED = 1.0  # m/s
+
+
+# EPS firmware that steers to a stop: the 2022+ CX-5's, and the 2023 CX-8's (Japan). Every gen1 Mazda EPS is the same
+# hardware and the 45 kph floor is the firmware's, so a donor EPS carries this into an older body (the EPS swap) while
+# that body's other ECUs keep its own platform. Matched with the null padding stripped. From zoompilot's
+# STEER_TO_ZERO_EPS_FW and the 2022 CX-5 fingerprints; a 2017-21 CX-5 with one is commaCarSegments 9f46a57f430101ea.
+STEER_TO_ZERO_EPS_FW = frozenset({
+  b'K0A1-3210X-A-00',
+  b'KBST-3210X-A-00',
+  b'KSD5-3210X-C-00',
+})
+
+# Platforms built with that EPS: what an EPS that did not answer the firmware query falls back to.
+STEER_TO_ZERO_PLATFORMS = frozenset({CAR.MAZDA_CX5_2022})
+
+
+def steer_to_zero_eps(candidate: str, car_fw: list[CarParams.CarFw]) -> bool:
+  """Whether the car's EPS has no low-speed floor: by its firmware when it answered, by the platform otherwise."""
+  eps_fw = {bytes(fw.fwVersion).rstrip(b'\x00') for fw in car_fw if fw.ecu == Ecu.eps}
+  if eps_fw:
+    return not eps_fw.isdisjoint(STEER_TO_ZERO_EPS_FW)
+  return candidate in STEER_TO_ZERO_PLATFORMS
 
 
 class Buttons:

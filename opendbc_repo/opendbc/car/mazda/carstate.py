@@ -60,6 +60,12 @@ class CarState(CarStateBase):
     self.ti_violation = 0
     self.ti_error = 0
     self.ti_lkas_allowed = False
+    # The EPS's LKAS channel as STEER_RATE reports it: blocked, in its standby from a stop (LKAS_TRACK_STATE), and
+    # whether it has applied any torque yet this drive. eps_first_engage_hold is for the steer-to-zero EPS only.
+    self.lkas_blocked = False
+    self.lkas_track_state = False
+    self.lkas_delivered = False
+    self.eps_first_engage_hold = False
 
     self._prev_steering_angle = 0
 
@@ -167,6 +173,20 @@ class CarState(CarStateBase):
 
     # Either due to low speed or hands off
     lkas_blocked = cp.vl["STEER_RATE"]["LKAS_BLOCK"] == 1
+    self.lkas_blocked = lkas_blocked
+    self.lkas_track_state = cp.vl["STEER_RATE"]["LKAS_TRACK_STATE"] == 1
+    # LKAS_EFFECTIVE is the torque the EPS applies for the request. Its two lowest bits are not part of the value
+    # (zoompilot decodes the field as 10 bits x 4), so 0 to 3 is nothing delivered.
+    lkas_effective = cp.vl["STEER_RATE"]["LKAS_EFFECTIVE"]
+    self.lkas_delivered = self.lkas_delivered or not (0 <= lkas_effective <= 3)
+    if self.CP.flags & MazdaSafetyFlags.STEER_TO_ZERO_EPS:
+      # The steer-to-zero EPS's first LKAS activation of the drive, made in its standby from a stop at a crawl while it
+      # delivers nothing, can raise STEER_RATE.LKAS_FAULT; 5 s later the camera latches its own fault until the car is
+      # restarted (zoompilot, docs/zoompilot/mazda-lateral.md "The first-activation hold"). With the Torque Interceptor
+      # the controller steers at a standstill, where that activation is routine. Until the EPS has delivered once, the
+      # standby has lifted or the car is rolling, the car controller holds the EPS's request at zero.
+      self.eps_first_engage_hold = (not self.lkas_delivered and lkas_blocked and self.lkas_track_state and
+                                    ret.vEgoRaw < LKAS_LIMITS.EPS_STANDBY_SPEED)
 
     if self.CP.minSteerSpeed > 0:
       # LKAS is enabled at 52kph going up and disabled at 45kph going down
@@ -273,7 +293,9 @@ class CarState(CarStateBase):
     fp_ret.hazardLights = hazard
     fp_ret.wipersActive = cp.vl["BLINK_INFO"]["WIPER_LO"] == 1 or cp.vl["BLINK_INFO"]["WIPER_HI"] == 1
     fp_ret.washerActive = cp.vl["BLINK_INFO"]["FRONT_WASHER"] == 1
-    fp_ret.hornPressed = cp.vl["TURN_SWITCH"]["HORN"] != 0
+    # 15 while the horn is pressed and 0 otherwise on the CX-9 it was decoded on. A 2017-21 CX-5 sends 13 there all the
+    # time (byte 6 is 0x5a; commaCarSegments 9f46a57f430101ea), so only 15 counts as the horn.
+    fp_ret.hornPressed = cp.vl["TURN_SWITCH"]["HORN"] == 15
     fp_ret.autoHoldActive = self.auto_hold_active
     fp_ret.lampsOn = cp.vl["MSG_11"]["LAMPS_ON"] == 1
 

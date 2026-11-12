@@ -41,6 +41,10 @@ class CarController(CarControllerBase):
     super().__init__(dbc_names, CP)
     self.apply_torque_last = 0
     self.ti_apply_torque_last = 0
+    # What the EPS's own channel (0x243) last sent. It equals the shared command except on a steer-to-zero EPS, while
+    # its first activation is held and as it climbs back from zero after (_eps_torque).
+    self.steer_to_zero = bool(CP.flags & MazdaSafetyFlags.STEER_TO_ZERO_EPS)
+    self.eps_torque_last = 0
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.brake_counter = 0
     self.ccp = CarControllerParams(CP)
@@ -88,6 +92,22 @@ class CarController(CarControllerBase):
     self.hybrid_master_write_frame = 0
     self.handover_filter = FirstOrderFilter(0.0, HYBRID_HANDOVER_RC, DT_CTRL)
     self.handover_frames = 0
+
+  def _eps_torque(self, apply_torque: int, CS) -> int:
+    """The EPS's own LKAS request (0x243) from the shared command. Legacy firmware takes the shared command as it is.
+    A steer-to-zero EPS gets zero through carstate's first-activation hold, then climbs back from zero at the EPS's
+    rates, which is what the panda checks this channel against; a fall toward zero is taken at once, as the panda
+    allows. The Torque Interceptor's command is the shared one and never waits for this channel."""
+    if not self.steer_to_zero:
+      eps_torque = apply_torque
+    elif CS.eps_first_engage_hold:
+      eps_torque = 0
+    else:
+      eps_torque = apply_driver_steer_torque_limits(apply_torque, self.eps_torque_last, CS.out.steeringTorque, self.ccp)
+      if apply_torque * self.eps_torque_last >= 0 and abs(apply_torque) < abs(eps_torque):
+        eps_torque = apply_torque
+    self.eps_torque_last = eps_torque
+    return eps_torque
 
   def _reset_emulation_state(self):
     self.standstill_hold_frames = 0
@@ -275,6 +295,7 @@ class CarController(CarControllerBase):
 
     self.apply_torque_last = apply_torque
     self.ti_apply_torque_last = ti_apply_torque
+    eps_torque = self._eps_torque(apply_torque, CS)
 
     if self.CP.flags & MazdaSafetyFlags.GEN1:
       if self.hybrid:
@@ -563,14 +584,17 @@ class CarController(CarControllerBase):
 
     # send steering command
     can_sends.extend(mazdacan.create_steering_control(
-      self.packer, self.CP, self.frame, apply_torque, CS.cam_lkas,
+      self.packer, self.CP, self.frame, eps_torque, CS.cam_lkas,
       ti_apply_torque if self.CP.flags & MazdaSafetyFlags.TORQUE_INTERCEPTOR else None))
 
     new_actuators = CC.actuators.as_builder()
     # As in MoreTore's build: the stock channel is reported. With the TI mirroring it, the two
-    # are the same command whenever the TI is steering.
-    new_actuators.torque = apply_torque / self.ccp.STEER_MAX
-    new_actuators.torqueOutputCan = apply_torque
+    # are the same command whenever the TI is steering. With a TI that stays the shared command
+    # while a steer-to-zero EPS's own channel is held, since the TI carries on; without one the
+    # EPS's channel is all there is, and it is reported as sent.
+    out_torque = apply_torque if self.CP.flags & MazdaSafetyFlags.TORQUE_INTERCEPTOR else eps_torque
+    new_actuators.torque = out_torque / self.ccp.STEER_MAX
+    new_actuators.torqueOutputCan = out_torque
 
     self.long_active_last = CC.longActive
     self.frame += 1

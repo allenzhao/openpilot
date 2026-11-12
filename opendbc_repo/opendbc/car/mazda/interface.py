@@ -9,7 +9,7 @@ from opendbc.car.mazda.carcontroller import CarController
 from opendbc.car.mazda.carstate import CarState
 from opendbc.car.mazda.hybrid import RadarWitness
 from opendbc.car.mazda.longitudinal import capture_stock_radar_frames, enter_radar_programming_session, request_radar_default_session
-from opendbc.car.mazda.values import CAR, LKAS_LIMITS, MazdaSafetyFlags, GEN1, GEN2, GEN3
+from opendbc.car.mazda.values import CAR, LKAS_LIMITS, MazdaSafetyFlags, GEN1, GEN2, GEN3, steer_to_zero_eps
 from openpilot.common.params import Params
 
 NON_LINEAR_TORQUE_PARAMS = {
@@ -90,8 +90,14 @@ class CarInterface(CarInterfaceBase):
 
     CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 
-    if candidate not in (CAR.MAZDA_CX5_2022, CAR.MAZDA_3_2019, CAR.MAZDA_CX_30, CAR.MAZDA_CX_50, CAR.MAZDA_3_2023, CAR.MAZDA_CX_30_2023):
-      ret.minSteerSpeed = LKAS_LIMITS.DISABLE_SPEED * CV.KPH_TO_MS
+    if candidate in GEN1:
+      # The 45 kph floor is the EPS firmware's, not the body's (values.steer_to_zero_eps): a 2022+ EPS fitted to an
+      # older CX-5 (the EPS swap) steers to a stop in a body that still fingerprints as its own year. The Torque
+      # Interceptor lifts the floor on any EPS (below).
+      if steer_to_zero_eps(candidate, car_fw):
+        ret.flags |= MazdaSafetyFlags.STEER_TO_ZERO_EPS.value
+      else:
+        ret.minSteerSpeed = LKAS_LIMITS.DISABLE_SPEED * CV.KPH_TO_MS
 
     ret.enableBsm = True
 
